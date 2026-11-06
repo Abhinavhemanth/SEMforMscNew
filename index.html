@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Instrument Viewer – Scanning Electron Microscope</title>
+<style>
+:root{--bg:#0c1319;--panel:#131d26;--line:#243442;--ink:#e6edf3;--dim:#8da2b3;--acc:#3fd0c9;--warm:#f2b84b}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,sans-serif;overflow:hidden}
+body{display:flex;flex-direction:column}
+header{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+h1{font:600 18px/1.2 Georgia,serif;letter-spacing:.2px}
+.chips{display:flex;gap:6px;overflow-x:auto}
+.chip{border:1px solid var(--line);background:none;color:var(--dim);padding:5px 12px;border-radius:99px;font:inherit;font-size:13px;white-space:nowrap;cursor:not-allowed}
+.chip.on{background:var(--acc);color:#04201f;border-color:var(--acc);cursor:default;font-weight:600}
+.chip small{opacity:.7;margin-left:4px}
+nav{display:flex;gap:2px;padding:0 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+nav button{background:none;border:0;border-bottom:3px solid transparent;color:var(--dim);padding:10px 14px;font:inherit;cursor:pointer}
+nav button:hover{color:var(--ink)}
+nav button.on{color:var(--ink);border-bottom-color:var(--acc)}
+nav button:focus-visible,.chip:focus-visible,.pl button:focus-visible{outline:2px solid var(--warm);outline-offset:-2px}
+main{flex:1;display:flex;min-height:0}
+#wrap{flex:1;position:relative;min-width:0}
+#wrap canvas{display:block;width:100%;height:100%}
+.lb{position:absolute;pointer-events:none;transform:translate(-50%,-50%);background:rgba(10,18,24,.85);border:1px solid var(--acc);color:var(--ink);font-size:12px;padding:2px 8px;border-radius:4px;white-space:nowrap;opacity:0;transition:opacity .3s}
+aside{width:310px;border-left:1px solid var(--line);background:var(--panel);padding:16px;overflow-y:auto}
+aside h2{font:600 16px Georgia,serif;margin-bottom:6px}
+aside p{color:var(--dim);font-size:14px;margin-bottom:10px}
+.pl{list-style:none;padding:0;margin:10px 0}
+.pl button{width:100%;text-align:left;background:none;border:1px solid transparent;border-radius:6px;color:var(--ink);padding:7px 10px;font:inherit;font-size:14px;cursor:pointer}
+.pl button:hover{border-color:var(--line)}
+.pl button.on{background:#0d3a3f;border-color:var(--acc)}
+.card{border:1px solid var(--line);border-radius:8px;padding:12px;background:#0f1820;margin-top:8px}
+.card b{color:var(--warm)}
+.btn{background:var(--acc);color:#04201f;border:0;border-radius:6px;padding:7px 14px;font:600 14px inherit;cursor:pointer}
+.steps{padding-left:20px;color:var(--dim);font-size:14px}
+.steps li{padding:4px 0}
+.steps li.on{color:var(--ink);font-weight:600}
+input[type=range]{width:100%;accent-color:var(--acc)}
+@media(max-width:820px){main{flex-direction:column}aside{width:100%;height:42%;border-left:0;border-top:1px solid var(--line)}h1{font-size:16px}}
+@media(prefers-reduced-motion:reduce){.lb{transition:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Instrument Viewer</h1>
+  <div class="chips" role="group" aria-label="Choose instrument">
+    <button class="chip on" aria-pressed="true">SEM</button>
+    <button class="chip" disabled>AFM<small>soon</small></button>
+    <button class="chip" disabled>TEM<small>soon</small></button>
+    <button class="chip" disabled>XRD<small>soon</small></button>
+    <button class="chip" disabled>FTIR<small>soon</small></button>
+    <button class="chip" disabled>UV-Vis<small>soon</small></button>
+  </div>
+</header>
+<nav id="tabs" role="tablist">
+  <button data-t="real" class="on">Instrument</button>
+  <button data-t="expl">Exploded view</button>
+  <button data-t="anim">How it works</button>
+  <button data-t="parts">Parts list</button>
+</nav>
+<main>
+  <div id="wrap"></div>
+  <aside id="side"></aside>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+/* ---------- scene ---------- */
+const wrap=document.getElementById('wrap');
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.shadowMap.enabled=true;
+wrap.appendChild(renderer.domElement);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0c1319);
+scene.fog=new THREE.Fog(0x0c1319,22,48);
+const camera=new THREE.PerspectiveCamera(40,1,.1,100);
+camera.position.set(10,6.5,12);
+const ctl=new THREE.OrbitControls(camera,renderer.domElement);
+ctl.enableDamping=true;ctl.target.set(.5,3.4,0);ctl.autoRotateSpeed=.8;ctl.maxPolarAngle=Math.PI*.52;ctl.minDistance=3;ctl.maxDistance=26;
+
+scene.add(new THREE.HemisphereLight(0xcfe8ff,0x1a2530,.85));
+const sun=new THREE.DirectionalLight(0xffffff,1.1);
+sun.position.set(7,12,8);sun.castShadow=true;
+Object.assign(sun.shadow.camera,{left:-12,right:12,top:12,bottom:-12});sun.shadow.mapSize.set(2048,2048);
+scene.add(sun);
+const rim=new THREE.DirectionalLight(0x7fd8ff,.5);rim.position.set(-8,5,-6);scene.add(rim);
+const floor=new THREE.Mesh(new THREE.CircleGeometry(16,64),new THREE.MeshStandardMaterial({color:0x101a23,roughness:.9}));
+floor.rotation.x=-Math.PI/2;floor.position.y=-.01;floor.receiveShadow=true;scene.add(floor);
+const grid=new THREE.GridHelper(32,32,0x1d2d3a,0x16232d);grid.position.y=0;scene.add(grid);
+
+/* ---------- helpers ---------- */
+const inst=new THREE.Group();inst.position.x=-1.5;scene.add(inst);
+const M=(c,m=.35,r=.4)=>new THREE.MeshStandardMaterial({color:c,metalness:m,roughness:r,transparent:true});
+const mesh=(geo,c,x=0,y=0,z=0,m,r)=>{const o=new THREE.Mesh(geo,M(c,m,r));o.position.set(x,y,z);o.castShadow=o.receiveShadow=true;return o};
+const cyl=(rt,rb,h,c,x,y,z,m,r)=>mesh(new THREE.CylinderGeometry(rt,rb,h,48),c,x,y,z,m,r);
+const box=(w,h,d,c,x,y,z,m,r)=>mesh(new THREE.BoxGeometry(w,h,d),c,x,y,z,m,r);
+const tor=(R,t,c,x,y,z,m,r)=>{const o=mesh(new THREE.TorusGeometry(R,t,16,48),c,x,y,z,m,r);o.rotation.x=Math.PI/2;return o};
+const SILVER=0xcdd3da,DARK=0x27323f,TEAL=0x1fb5a8,COPPER=0xb87333;
+
+const P=[];
+function part(id,name,func,spec,ex,cut,build){
+  const g=new THREE.Group();build(g);inst.add(g);
+  g.traverse(o=>{if(o.isMesh)o.userData.pid=id});
+  const mats=new Set();g.traverse(o=>o.material&&mats.add(o.material));
+  P.push({id,name,func,spec,ex:new THREE.Vector3(...ex),cut,g,mats:[...mats],n:P.length+1});
+}
+const add=(g,...o)=>o.forEach(x=>g.add(x));
+
+/* ---------- monitor image (fake SEM micrograph of nanoparticles) ---------- */
+const img=document.createElement('canvas');img.width=256;img.height=192;
+const scrC=document.createElement('canvas');scrC.width=256;scrC.height=192;
+(function(){const c=img.getContext('2d');let s=7;const R=()=>(s=(s*16807)%2147483647)/2147483647;
+  c.fillStyle='#4a4a4a';c.fillRect(0,0,256,192);
+  for(let i=0;i<70;i++){const x=R()*256,y=R()*192,r=6+R()*14;const gr=c.createRadialGradient(x-r*.3,y-r*.3,1,x,y,r);
+    gr.addColorStop(0,'#fff');gr.addColorStop(.7,'#9a9a9a');gr.addColorStop(1,'#333');c.fillStyle=gr;c.beginPath();c.arc(x,y,r,0,7);c.fill()}
+  const d=c.getImageData(0,0,256,192);for(let i=0;i<d.data.length;i+=4){const n=(R()-.5)*34;d.data[i]+=n;d.data[i+1]+=n;d.data[i+2]+=n}
+  c.putImageData(d,0,0)})();
+const tex=new THREE.CanvasTexture(scrC);
+function drawScreen(rows){const c=scrC.getContext('2d');c.fillStyle='#050808';c.fillRect(0,0,256,192);
+  if(rows>0)c.drawImage(img,0,0,256,rows,0,0,256,rows);
+  if(rows<192){c.fillStyle='#7fffe9';c.fillRect(0,rows,256,1)}
+  c.fillStyle='#fff';c.font='9px sans-serif';c.fillText('10 kV   x20,000   SE',6,186);tex.needsUpdate=true}
+drawScreen(192);
+
+/* ---------- parts (bottom to top) ---------- */
+part('base','Instrument table / cabinet','Vibration-damped bench that carries the column and holds electronics and cables.','Acoustic and floor-vibration isolation is essential for nm-scale imaging.',[0,-1,0],false,g=>{
+  add(g,box(9,.5,4.2,DARK,1.5,.25,0,.2,.6),box(9.1,.06,4.3,0xcfd6de,1.5,.53,0,.1,.3));
+  [-2.7,5.7].forEach(x=>[-1.7,1.7].forEach(z=>add(g,cyl(.12,.12,.3,0x111,x,-.1,z))));
+});
+part('vac','Vacuum system (turbo + rotary pump)','Removes air so electrons are not scattered by gas molecules; keeps the gun clean.','Column about 10⁻⁴ to 10⁻⁶ Pa (up to 10⁻⁸ Pa for field-emission guns).',[-2.4,.2,-1.9],false,g=>{
+  add(g,cyl(.55,.55,1.2,0x7e8a96,-2.4,1.15,0,.6,.3),cyl(.42,.42,.12,0x2b6cb0,-2.4,1.8,0),cyl(.15,.15,1.4,SILVER,-1.8,1.5,0,.7,.3));
+  g.children[2].rotation.z=Math.PI/2;
+});
+part('chamber','Specimen chamber','Vacuum vessel around the sample stage with ports for detectors.','Stainless steel or aluminium; typical internal width 150–300 mm.',[0,-.5,0],true,g=>{
+  add(g,cyl(1.1,1.1,1.6,SILVER,0,1.4,0,.7,.25),cyl(1.2,1.2,.1,0x9aa5b1,0,2.25,0,.8,.3),cyl(1.2,1.2,.1,0x9aa5b1,0,.6,0,.8,.3));
+  const w=cyl(.22,.22,.1,0x0a1a22,1.12,1.5,0);w.rotation.z=Math.PI/2;g.add(w);
+});
+part('door','Chamber door','Hinged door for loading samples; carries a viewing window and vent control.','Opens only after the chamber is vented with dry nitrogen.',[0,0,2.8],true,g=>{
+  const d=box(1.5,1.3,.12,0xe4e8ec,0,1.4,1.17,.5,.3);const h=cyl(.05,.05,.5,0x333,.55,1.4,1.3);
+  add(g,d,h);
+});
+part('stage','Sample stage & specimen','Holds the sample and moves it in X, Y, Z, tilt and rotation.','Motorised 5-axis stage; samples mounted on carbon tape on aluminium stubs.',[-2.8,.3,1.3],false,g=>{
+  add(g,cyl(.6,.6,.12,0x8a95a1,0,1.45,0,.7,.3),cyl(.15,.15,.9,0x6f7a86,0,1.0,0,.7,.3),cyl(.25,.25,.08,0xb6bcc4,0,1.55,0,.8,.3),box(.2,.12,.2,0x222a33,0,1.63,0,.1,.7));
+});
+part('bse','Backscattered-electron (BSE) detector','Ring detector under the lens that collects high-energy backscattered electrons.','Contrast depends on atomic number Z: heavier elements look brighter.',[2,.5,-2.2],false,g=>{
+  add(g,tor(.38,.12,0xc0392b,0,2.1,0,.4,.4));
+});
+part('se','Secondary-electron (SE) detector','Everhart–Thornley detector: a positively biased grid pulls in low-energy secondary electrons.','Scintillator and photomultiplier convert electrons to a signal; images show topography.',[2.6,.3,0],false,g=>{
+  const r=cyl(.1,.1,1.2,0xe0a030,.9,1.95,0,.6,.3);r.rotation.z=Math.PI/2;
+  const f=cyl(.28,.28,.12,0xb08020,1.2,1.95,0,.6,.3);f.rotation.z=Math.PI/2;
+  add(g,r,f,mesh(new THREE.SphereGeometry(.15,24,16),0xffe08a,.3,1.95,0,.2,.3));
+});
+part('obj','Objective lens','Final lens: focuses the beam to a nanometre-sized spot on the sample.','Electromagnetic coil in an iron pole piece; focus is set by the lens current.',[0,.8,0],true,g=>{
+  add(g,cyl(.9,.9,.9,0x3a4756,0,2.8,0,.6,.35),cyl(.93,.93,.12,TEAL,0,2.8,0,.4,.3),cyl(.15,.5,.45,0x9aa5b1,0,2.25,0,.8,.3),cyl(.3,.3,.9,0x7e8a96,0,3.3,0,.8,.3));
+});
+part('coils','Scan coils','Two pairs of deflection coils steer the beam in a raster across the sample.','Scan speed sets image time; magnification = display width ÷ scanned width.',[0,1.8,0],true,g=>{
+  add(g,tor(.62,.16,COPPER,0,3.75,0,.7,.35),tor(.62,.16,COPPER,0,3.98,0,.7,.35),cyl(.3,.3,.9,0x7e8a96,0,3.85,0,.8,.3));
+});
+part('apt','Objective aperture','Thin metal disc with a tiny hole that trims the beam and sets depth of field.','Hole diameter about 20–200 µm; smaller means sharper but dimmer image.',[0,2.6,0],true,g=>{
+  add(g,cyl(.55,.55,.3,0x6b7683,0,4.55,0,.8,.3),cyl(.3,.3,.7,0x7e8a96,0,4.6,0,.8,.3),cyl(.1,.1,.02,0x000,0,4.71,0));
+});
+part('cond','Condenser lens','Demagnifies the beam from the gun and controls spot size and probe current.','A stronger lens gives a smaller spot, better resolution and less current.',[0,3.7,0],true,g=>{
+  add(g,cyl(.85,.85,.9,0x3a4756,0,5.5,0,.6,.35),cyl(.88,.88,.12,TEAL,0,5.5,0,.4,.3),cyl(.3,.3,1.1,0x7e8a96,0,5.4,0,.8,.3));
+});
+part('gun','Electron gun','Emits and accelerates electrons: heated tungsten or LaB6 filament, or a field-emission tip.','Accelerating voltage typically 0.5–30 kV.',[0,5.2,0],true,g=>{
+  add(g,cyl(.55,.55,.9,0x2d3a4a,0,6.45,0,.5,.4),cyl(.55,.55,.1,TEAL,0,6.3,0,.4,.3),cyl(.3,.55,.3,0x394a5c,0,7.05,0,.5,.4),
+      mesh(new THREE.SphereGeometry(.3,24,16),0x394a5c,0,7.2,0,.5,.4),cyl(.3,.3,.6,0x7e8a96,0,6.7,0,.8,.3));
+  const hv=cyl(.09,.09,1.4,0x151515,.7,7.6,0,.1,.7);hv.rotation.z=Math.PI/2.6;g.add(hv);
+});
+part('mon','Control monitor & electronics','Shows the live image; the PC sets voltage, focus, magnification and scan speed.','Image is built pixel by pixel as the beam scans, synchronised with detector signal.',[2,.5,1],false,g=>{
+  const s=new THREE.Group();s.position.x=3.9;s.rotation.y=-.45;
+  s.add(cyl(.18,.18,.5,0x222,0,.8,0),box(1.2,.08,.8,0x222,0,.58,0),box(2.3,1.6,.12,0x15191e,0,1.85,0,.2,.5));
+  const scr=new THREE.Mesh(new THREE.PlaneGeometry(2.05,1.38),new THREE.MeshBasicMaterial({map:tex,transparent:true}));scr.position.set(0,1.85,.07);s.add(scr);
+  g.add(s);
+});
+
+/* ---------- beam + signals (live in inst coords, never explode) ---------- */
+const BM=()=>new THREE.MeshBasicMaterial({color:0x66d9ff,transparent:true,opacity:.9});
+const beamA=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,1,8),BM()),beamB=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,1,8),BM());
+const glow=new THREE.Mesh(new THREE.SphereGeometry(.12,16,12),new THREE.MeshBasicMaterial({color:0xaef3ff,transparent:true,opacity:.9}));
+const FX=new THREE.Group();FX.add(beamA,beamB,glow);inst.add(FX);FX.visible=false;
+function pts(n,col,size){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(n*3),3));
+  const o=new THREE.Points(g,new THREE.PointsMaterial({color:col,size,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending}));o.frustumCulled=false;FX.add(o);return o}
+const NE=48,eDots=pts(NE,0x9be8ff,.14),NS=40,seDots=pts(NS,0xffd24a,.11),bseDots=pts(NS,0xff6a5a,.11);
+const sig=Array.from({length:NS},()=>({u:Math.random(),z:(Math.random()-.5)*.6}));
+const G=new THREE.Vector3(0,6.85,0),B=new THREE.Vector3(0,3.85,0),C=new THREE.Vector3(),UP=new THREE.Vector3(0,1,0);
+function seg(m,a,b){const d=b.clone().sub(a);m.position.copy(a).addScaledVector(d,.5);m.scale.set(1,d.length(),1);m.quaternion.setFromUnitVectors(UP,d.normalize())}
+const SEH=new THREE.Vector3(.3,1.95,0);
+function runFX(t){
+  C.set((((t*6)%1)*2-1)*.3,1.69,(((t*.4)%1)*2-1)*.3);
+  seg(beamA,G,B);seg(beamB,B,C);glow.position.copy(C);glow.scale.setScalar(.8+.3*Math.sin(t*20));
+  const L1=3,L2=B.distanceTo(C),L=L1+L2,p=eDots.geometry.attributes.position;
+  for(let i=0;i<NE;i++){const d=((i/NE+t*.6)%1)*L;let x,y,z;
+    if(d<L1){x=0;y=6.85-d;z=0}else{const f=(d-L1)/L2;x=C.x*f;y=B.y+(C.y-B.y)*f;z=C.z*f}p.setXYZ(i,x,y,z)}
+  p.needsUpdate=true;
+  [[seDots,0],[bseDots,1]].forEach(([o,k])=>{const q=o.geometry.attributes.position;
+    for(let i=0;i<NS;i++){const s=sig[i];const u=(s.u+t*.8+k*.3)%1;
+      const tx=k?0:SEH.x,ty=k?2.1:SEH.y,tz=k?s.z:0;
+      q.setXYZ(i,C.x+(tx-C.x)*u+(k?0:0),C.y+(ty-C.y)*u+Math.sin(u*Math.PI)*.35,C.z+(tz-C.z)*u)}q.needsUpdate=true});
+  drawScreen(Math.floor(((t*.4)%1)*192));
+}
+
+/* ---------- UI state ---------- */
+const STEPS=[['gun','Electron gun','Electrons are emitted from a heated filament or field-emission tip and accelerated down the column.'],
+['cond','Condenser lens','The lens shrinks the beam and sets the spot size and current.'],
+['coils','Scan coils','Magnetic fields sweep the beam line by line across the sample (raster).'],
+['obj','Objective lens','The final lens focuses the beam to a spot a few nanometres wide.'],
+['se','Detectors','Secondary electrons (yellow) and backscattered electrons (red) are collected; their signal brightens one screen pixel at a time.']];
+let tab='real',sel=null,e=0,eT=0,slider=1,spin=true,focus=0,stepI=0,playing=true,clock=0;
+const side=document.getElementById('side');
+const byId=id=>P.find(p=>p.id===id);
+
+function render(){
+  let h='';
+  if(tab==='real')h=`<h2>Laboratory SEM</h2><p>A simplified, labelled model of a tabletop-style scanning electron microscope. Drag to rotate, scroll or pinch to zoom, click any part to learn about it.</p><button class="btn" id="spin">${spin?'Pause rotation':'Auto-rotate'}</button><div class="card"><b>Tip</b><br>Switch to “Exploded view” to pull the instrument apart, or “How it works” to watch the beam.</div>`;
+  if(tab==='expl')h=`<h2>Exploded view</h2><p>Drag the slider to separate the parts. Labels appear as they spread out.</p><input type="range" id="sl" min="0" max="1" step=".01" value="${slider}" aria-label="Explosion amount"><div class="card">Open the “Parts list” tab to focus on a single component.</div>`;
+  if(tab==='anim')h=`<h2>How an SEM works</h2><p>The chamber and column are made see-through so you can follow the beam.</p><button class="btn" id="pp">${playing?'Pause':'Play'}</button><ol class="steps" id="st">${STEPS.map((s,i)=>`<li data-i="${i}" class="${i===stepI?'on':''}"><b>${s[1]}.</b> ${i===stepI?s[2]:''}</li>`).join('')}</ol>`;
+  if(tab==='parts'){const p=sel&&byId(sel);
+    h=`<h2>Parts of the SEM</h2><p>Click a part to see it in the exploded view.</p><ul class="pl">${P.slice().reverse().map(q=>`<li><button data-id="${q.id}" class="${q.id===sel?'on':''}">${q.n}. ${q.name}</button></li>`).join('')}</ul>`+
+    (p?`<div class="card"><b>${p.name}</b><p style="margin:6px 0">${p.func}</p><span style="color:var(--dim);font-size:13px">${p.spec}</span></div>`:'');}
+  side.innerHTML=h;
+  const $=id=>document.getElementById(id);
+  if($('spin'))$('spin').onclick=()=>{spin=!spin;render()};
+  if($('sl'))$('sl').oninput=ev=>{slider=+ev.target.value;eT=slider};
+  if($('pp'))$('pp').onclick=()=>{playing=!playing;render()};
+  side.querySelectorAll('.pl button').forEach(b=>b.onclick=()=>select(b.dataset.id));
+  side.querySelectorAll('#st li').forEach(l=>l.onclick=()=>{stepI=+l.dataset.i;clock=0;render()});
+}
+function setTab(t){tab=t;document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
+  if(t!=='parts')sel=null;eT=t==='expl'?slider:t==='parts'?1:0;FX.visible=t==='anim';if(t!=='anim')drawScreen(192);
+  if(t==='anim')eT=0;focus=40;render()}
+function select(id){sel=id;if(tab!=='parts'){tab='parts';document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t==='parts'));FX.visible=false;drawScreen(192)}eT=1;focus=90;render()}
+document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>setTab(b.dataset.t));
+
+/* centres + labels */
+inst.updateMatrixWorld(true);
+P.forEach(p=>{p.c=new THREE.Box3().setFromObject(p.g).getCenter(new THREE.Vector3());
+  p.lb=document.createElement('div');p.lb.className='lb';p.lb.textContent=p.n+'. '+p.name.split(' (')[0];wrap.appendChild(p.lb)});
+
+/* click to select */
+const ray=new THREE.Raycaster(),mp=new THREE.Vector2();let down=null;
+renderer.domElement.addEventListener('pointerdown',ev=>down=[ev.clientX,ev.clientY]);
+renderer.domElement.addEventListener('pointerup',ev=>{if(!down||Math.hypot(ev.clientX-down[0],ev.clientY-down[1])>5)return;
+  const r=renderer.domElement.getBoundingClientRect();mp.set((ev.clientX-r.left)/r.width*2-1,-(ev.clientY-r.top)/r.height*2+1);
+  ray.setFromCamera(mp,camera);const h=ray.intersectObjects(inst.children.filter(o=>o.isGroup&&o!==FX),true).find(x=>x.object.userData.pid&&x.object.material.opacity>.5);
+  if(h)select(h.object.userData.pid)});
+
+function resize(){const w=wrap.clientWidth,h=wrap.clientHeight;renderer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix()}
+addEventListener('resize',resize);resize();
+
+const V=new THREE.Vector3(),DEF=new THREE.Vector3(.5,3.4,0);let last=performance.now();
+function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-last)/1000,.1);last=now;
+  e+=(eT-e)*.08;
+  const hlId=tab==='anim'?STEPS[stepI][0]:sel;
+  P.forEach(p=>{p.g.position.copy(p.ex).multiplyScalar(e);
+    const base=tab==='anim'&&p.cut?.2:(sel&&sel!==p.id?.15:1);
+    const hl=p.id===hlId&&(tab==='anim'||tab==='parts');
+    p.mats.forEach(m=>{m.opacity+=(base-m.opacity)*.15;m.depthWrite=m.opacity>.9;if(m.emissive)m.emissive.setHex(hl?0x0b7f86:0)});
+    p.lb.style.opacity=(e>.45&&(tab!=='parts'||!sel||sel===p.id))?1:0;
+    V.copy(p.c).addScaledVector(p.ex,e).project(camera);
+    p.lb.style.left=((V.x*.5+.5)*wrap.clientWidth)+'px';p.lb.style.top=((-V.y*.5+.5)*wrap.clientHeight)+'px'});
+  if(tab==='anim'&&playing){clock+=dt;runFX(performance.now()/1000);
+    if(clock>3.2){clock=0;stepI=(stepI+1)%STEPS.length;render()}}
+  if(focus>0){focus--;const tg=sel?byId(sel):null;
+    const want=tg?V.copy(tg.c).addScaledVector(tg.ex,e):DEF;ctl.target.lerp(want,.08);
+    if(tg){const d=camera.position.clone().sub(ctl.target);camera.position.copy(ctl.target).addScaledVector(d.normalize(),THREE.MathUtils.lerp(d.length(),9,.06))}}
+  ctl.autoRotate=spin&&tab==='real'&&!sel;ctl.update();renderer.render(scene,camera)}
+render();requestAnimationFrame(tick);
+</script>
+</body>
+</html>
